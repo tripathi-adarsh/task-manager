@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Task;
 use App\Models\User;
 use App\Models\Category;
+use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 
 class TaskController extends Controller
@@ -50,17 +51,26 @@ class TaskController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'title'       => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'status'      => 'required|in:pending,in_progress,completed,cancelled',
-            'priority'    => 'required|in:low,medium,high',
-            'due_date'    => 'nullable|date',
-            'category_id' => 'nullable|exists:categories,id',
-            'assigned_to' => 'nullable|exists:users,id',
+            'title'            => 'required|string|max:255',
+            'description'      => 'nullable|string',
+            'status'           => 'required|in:pending,in_progress,completed,cancelled',
+            'priority'         => 'required|in:low,medium,high',
+            'due_date'         => 'nullable|date',
+            'category_id'      => 'nullable|exists:categories,id',
+            'assigned_to'      => 'nullable|exists:users,id',
+            'progress'         => 'nullable|integer|min:0|max:100',
+            'estimated_hours'  => 'nullable|string|max:20',
         ]);
 
         $data['user_id'] = auth()->id();
-        Task::create($data);
+        $task = Task::create($data);
+
+        ActivityLog::create([
+            'task_id'     => $task->id,
+            'user_id'     => auth()->id(),
+            'action'      => 'created',
+            'description' => auth()->user()->name . ' created this task.',
+        ]);
 
         return redirect()->route('tasks.index')->with('success', 'Task created successfully.');
     }
@@ -70,6 +80,7 @@ class TaskController extends Controller
         $this->authorizeTask($task);
         $categories = Category::all();
         $users      = auth()->user()->isAdmin() ? User::where('is_active', true)->get() : collect();
+        $task->load(['comments.user', 'attachments.user', 'activityLogs.user']);
         return view('admin.tasks.edit', compact('task', 'categories', 'users'));
     }
 
@@ -78,16 +89,32 @@ class TaskController extends Controller
         $this->authorizeTask($task);
 
         $data = $request->validate([
-            'title'       => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'status'      => 'required|in:pending,in_progress,completed,cancelled',
-            'priority'    => 'required|in:low,medium,high',
-            'due_date'    => 'nullable|date',
-            'category_id' => 'nullable|exists:categories,id',
-            'assigned_to' => 'nullable|exists:users,id',
+            'title'           => 'required|string|max:255',
+            'description'     => 'nullable|string',
+            'status'          => 'required|in:pending,in_progress,completed,cancelled',
+            'priority'        => 'required|in:low,medium,high',
+            'due_date'        => 'nullable|date',
+            'category_id'     => 'nullable|exists:categories,id',
+            'assigned_to'     => 'nullable|exists:users,id',
+            'progress'        => 'nullable|integer|min:0|max:100',
+            'estimated_hours' => 'nullable|string|max:20',
         ]);
 
+        $oldStatus = $task->status;
         $task->update($data);
+
+        $desc = auth()->user()->name . ' updated this task.';
+        if ($oldStatus !== $data['status']) {
+            $desc = auth()->user()->name . ' changed status from "' . $oldStatus . '" to "' . $data['status'] . '".';
+        }
+
+        ActivityLog::create([
+            'task_id'     => $task->id,
+            'user_id'     => auth()->id(),
+            'action'      => 'updated',
+            'description' => $desc,
+        ]);
+
         return redirect()->route('tasks.index')->with('success', 'Task updated successfully.');
     }
 
@@ -101,7 +128,16 @@ class TaskController extends Controller
     public function updateStatus(Request $request, Task $task)
     {
         $this->authorizeTask($task);
+        $old = $task->status;
         $task->update(['status' => $request->status]);
+
+        ActivityLog::create([
+            'task_id'     => $task->id,
+            'user_id'     => auth()->id(),
+            'action'      => 'status_changed',
+            'description' => auth()->user()->name . ' changed status from "' . $old . '" to "' . $request->status . '".',
+        ]);
+
         return response()->json(['success' => true]);
     }
 

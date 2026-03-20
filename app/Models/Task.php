@@ -11,11 +11,13 @@ class Task extends Model
 
     protected $fillable = [
         'title', 'description', 'status', 'priority',
-        'due_date', 'user_id', 'category_id', 'assigned_to'
+        'due_date', 'user_id', 'category_id', 'assigned_to',
+        'progress', 'estimated_hours'
     ];
 
     protected $casts = [
         'due_date' => 'date',
+        'progress' => 'integer',
     ];
 
     public function creator()
@@ -31,6 +33,21 @@ class Task extends Model
     public function category()
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function comments()
+    {
+        return $this->hasMany(TaskComment::class)->latest();
+    }
+
+    public function attachments()
+    {
+        return $this->hasMany(TaskAttachment::class);
+    }
+
+    public function activityLogs()
+    {
+        return $this->hasMany(ActivityLog::class)->latest();
     }
 
     public function isOverdue(): bool
